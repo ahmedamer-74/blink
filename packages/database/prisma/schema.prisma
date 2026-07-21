@@ -1,0 +1,253 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  SUPERADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+model User {
+  id        String     @id @default(uuid()) @db.Uuid
+  email     String     @unique
+  username  String     @unique
+  password  String
+  avatar    String?
+  role      UserRole   @default(USER)
+  status    UserStatus @default(ACTIVE)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+
+  messages        Message[]
+  memberships     RoomMembership[]
+  refreshTokens   RefreshToken[]
+  keyBundle       UserKeyBundle?
+  starredMessages StarredMessage[]
+  statuses        Status[]
+  statusViews     StatusView[]
+  contacts        Contact[]       @relation("UserContacts")
+  contactOf       Contact[]       @relation("ContactOf")
+  blockedUsers    BlockedUser[]   @relation("BlockedBy")
+  blockedBy       BlockedUser[]   @relation("Blocks")
+  callsInitiated  Call[]
+  callParticipants CallParticipant[]
+  pushSubscriptions PushSubscription[]
+
+  @@map("users")
+}
+
+model Room {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String?
+  description String?
+  avatarUrl   String?
+  isPrivate   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  messages    Message[]
+  memberships RoomMembership[]
+  calls       Call[]
+
+  @@map("rooms")
+}
+
+model RoomMembership {
+  id         String     @id @default(uuid()) @db.Uuid
+  role       String     @default("member")  // "admin" | "member" | "owner"
+  status     String     @default("accepted")
+  mutedUntil DateTime?
+  joinedAt   DateTime   @default(now())
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roomId String @db.Uuid
+  room   Room   @relation(fields: [roomId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roomId])
+  @@map("room_memberships")
+}
+
+model Message {
+  id                 String    @id @default(uuid()) @db.Uuid
+  content            String
+  type               String    @default("text")  // "text" | "image" | "video" | "document" | "audio" | "system"
+  mediaUrl           String?
+  mediaMeta          Json?     // { size, mimeType, duration, width, height, thumbnailUrl }
+  editedAt           DateTime?
+  deletedFor         String[]  @default([])      // user IDs for "delete for me"
+  deletedForEveryone Boolean   @default(false)
+  systemMeta         Json?     // { action, actorId, targetId } for system messages
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  userId          String  @db.Uuid
+  user            User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  roomId          String  @db.Uuid
+  room            Room    @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  replyToMessageId String? @db.Uuid
+  replyToMessage  Message? @relation("MessageReplies", fields: [replyToMessageId], references: [id])
+  replies         Message[] @relation("MessageReplies")
+  forwardedFromId String? @db.Uuid
+  forwardedFrom   Message? @relation("MessageForwards", fields: [forwardedFromId], references: [id])
+  forwards        Message[] @relation("MessageForwards")
+  starredBy       StarredMessage[]
+
+  @@index([roomId, createdAt])
+  @@map("messages")
+}
+
+model RefreshToken {
+  id        String   @id @default(uuid()) @db.Uuid
+  token     String   @unique
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}
+
+model StarredMessage {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+
+  userId    String  @db.Uuid
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  messageId String  @db.Uuid
+  message   Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, messageId])
+  @@map("starred_messages")
+}
+
+model UserKeyBundle {
+  id              String   @id @default(uuid()) @db.Uuid
+  identityKey     String   // base64-encoded public identity key
+  signedPreKey    String   // base64-encoded public signed pre-key
+  signedPreKeySig String   // signature over signed pre-key
+  oneTimePreKeys  Json     // array of base64-encoded one-time pre-keys
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+  @@map("user_key_bundles")
+}
+
+model PushSubscription {
+  id        String   @id @default(uuid()) @db.Uuid
+  endpoint  String
+  p256dh    String   // encryption key
+  auth      String   // auth key
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([endpoint])
+  @@map("push_subscriptions")
+}
+
+model Status {
+  id        String   @id @default(uuid()) @db.Uuid
+  type      String   // "text" | "image" | "video"
+  content   String?  // for text statuses
+  mediaUrl  String?
+  caption   String?
+  createdAt DateTime @default(now())
+  expiresAt DateTime // createdAt + 24h
+
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  views  StatusView[]
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+  @@map("statuses")
+}
+
+model StatusView {
+  id       String   @id @default(uuid()) @db.Uuid
+  viewedAt DateTime @default(now())
+
+  statusId String @db.Uuid
+  status   Status @relation(fields: [statusId], references: [id], onDelete: Cascade)
+  viewerId String @db.Uuid
+  viewer   User   @relation(fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@unique([statusId, viewerId])
+  @@map("status_views")
+}
+
+model Contact {
+  id      String   @id @default(uuid()) @db.Uuid
+  addedAt DateTime @default(now())
+
+  userId    String @db.Uuid
+  user      User   @relation("UserContacts", fields: [userId], references: [id], onDelete: Cascade)
+  contactId String @db.Uuid
+  contact   User   @relation("ContactOf", fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, contactId])
+  @@map("contacts")
+}
+
+model BlockedUser {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+
+  userId    String @db.Uuid
+  user      User   @relation("BlockedBy", fields: [userId], references: [id], onDelete: Cascade)
+  blockedId String @db.Uuid
+  blocked   User   @relation("Blocks", fields: [blockedId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, blockedId])
+  @@map("blocked_users")
+}
+
+model Call {
+  id          String    @id @default(uuid()) @db.Uuid
+  type        String    // "voice" | "video"
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  duration    Int?      // seconds
+
+  conversationId String @db.Uuid
+  room           Room   @relation(fields: [conversationId], references: [id])
+  initiatorId    String @db.Uuid
+  initiator      User   @relation(fields: [initiatorId], references: [id])
+  participants   CallParticipant[]
+
+  @@map("calls")
+}
+
+model CallParticipant {
+  id       String    @id @default(uuid()) @db.Uuid
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime?
+
+  callId String @db.Uuid
+  call   Call   @relation(fields: [callId], references: [id], onDelete: Cascade)
+  userId String @db.Uuid
+  user   User   @relation(fields: [userId], references: [id])
+
+  @@map("call_participants")
+}

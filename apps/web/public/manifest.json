@@ -1,0 +1,17 @@
+{
+  "name": "Blink — Real-time Messaging",
+  "short_name": "Blink",
+  "description": "Fast, secure real-time messaging. Send text, voice, media, and files with instant delivery.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0B141A",
+  "theme_color": "#00A884",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

@@ -26,7 +26,13 @@ coverage
 out/
 build
 dist
+*.tsbuildinfo
 
+# Docs (excluded from deployment)
+apps/docs/
+
+# IDE
+.mimocode/
 
 # Debug
 npm-debug.log*

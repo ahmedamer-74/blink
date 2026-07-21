@@ -1,0 +1,167 @@
+@import "tailwindcss";
+
+@theme {
+  --radius: 0.5rem;
+  --color-background: #0B141A;
+  --color-foreground: #E9EDEF;
+  --color-card: #202C33;
+  --color-card-foreground: #E9EDEF;
+  --color-primary: #00A884;
+  --color-primary-foreground: #FFFFFF;
+  --color-secondary: #2A3942;
+  --color-secondary-foreground: #E9EDEF;
+  --color-muted: #2A3942;
+  --color-muted-foreground: #8696A0;
+  --color-accent: #00A884;
+  --color-accent-foreground: #FFFFFF;
+  --color-destructive: #EA4335;
+  --color-destructive-foreground: #FFFFFF;
+  --color-border: #2A3942;
+  --color-input: #2A3942;
+  --color-ring: #00A884;
+}
+
+@layer base {
+  :root {
+    --bg-app: #F0F2F5;
+    --bg-panel: #FFFFFF;
+    --bg-chat: #EFEAE2;
+    --bubble-out: #D9FDD3;
+    --bubble-in: #FFFFFF;
+    --accent: #00A884;
+    --accent-dark: #008069;
+    --text-primary: #111B21;
+    --text-secondary: #667781;
+    --divider: #E9EDEF;
+    --tick-read: #53BDEB;
+    --input-bg: #FFFFFF;
+    --chat-pattern-opacity: 0.06;
+  }
+
+  .dark {
+    --bg-app: #0B141A;
+    --bg-panel: #202C33;
+    --bg-chat: #0B141A;
+    --bubble-out: #005C4B;
+    --bubble-in: #202C33;
+    --accent: #00A884;
+    --accent-dark: #008069;
+    --text-primary: #E9EDEF;
+    --text-secondary: #8696A0;
+    --divider: #2A3942;
+    --tick-read: #53BDEB;
+    --input-bg: #2A3942;
+    --chat-pattern-opacity: 0.06;
+  }
+
+  html {
+    color-scheme: dark;
+  }
+
+  body {
+    background-color: var(--bg-app);
+    color: var(--text-primary);
+    font-family: -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-size: 14.2px;
+    line-height: 1.45;
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+  }
+
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--divider);
+  }
+}
+
+/* Chat background doodle pattern — original SVG tile, not copied */
+.chat-bg {
+  background-color: var(--bg-chat);
+  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' stroke='%23000000' stroke-width='0.5' opacity='0.08'%3E%3Cpath d='M10 15 Q15 10 20 15 T30 15'/%3E%3Cpath d='M35 25 Q40 20 45 25 T55 25'/%3E%3Cpath d='M5 40 Q10 35 15 40 T25 40'/%3E%3Cpath d='M40 45 Q45 40 50 45 T60 45'/%3E%3Ccircle cx='50' cy='10' r='2'/%3E%3Ccircle cx='25' cy='50' r='2'/%3E%3Cpath d='M30 5 L32 8 L28 8 Z'/%3E%3Cpath d='M55 35 L57 38 L53 38 Z'/%3E%3C/g%3E%3C/svg%3E");
+  background-repeat: repeat;
+}
+
+/* Scrollbar */
+.scrollbar-thin {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(134, 150, 160, 0.3) transparent;
+}
+
+/* WhatsApp message bubble tail */
+.bubble-tail-out::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: -8px;
+  width: 0;
+  height: 0;
+  border-left: 8px solid var(--bubble-out);
+  border-bottom: 8px solid transparent;
+}
+
+.bubble-tail-in::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: -8px;
+  width: 0;
+  height: 0;
+  border-right: 8px solid var(--bubble-in);
+  border-bottom: 8px solid transparent;
+}
+
+/* Typing dots animation */
+@keyframes typing-dot {
+  0%, 60%, 100% { opacity: 0.3; transform: translateY(0); }
+  30% { opacity: 1; transform: translateY(-4px); }
+}
+
+.typing-dot:nth-child(1) { animation: typing-dot 1.4s infinite 0s; }
+.typing-dot:nth-child(2) { animation: typing-dot 1.4s infinite 0.2s; }
+.typing-dot:nth-child(3) { animation: typing-dot 1.4s infinite 0.4s; }
+
+/* New message slide-up */
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slide-up {
+  animation: slide-up 120ms ease-out;
+}
+
+/* Connection banner pulse */
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.animate-pulse-dot {
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+/* Mic/send morph */
+.icon-morph-enter {
+  animation: icon-morph-in 150ms ease-out;
+}
+
+@keyframes icon-morph-in {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+/* Mobile touch improvements */
+@media (hover: none) and (pointer: coarse) {
+  button, a, [role="button"] {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}
+
+/* Prevent horizontal overflow on mobile */
+#__next, main {
+  overflow-x: hidden;
+}
