@@ -24,10 +24,6 @@ FROM oven/bun:1 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
-# Create non-root user
-RUN addgroup --system --gid 1001 bun && \
-    adduser --system --uid 1001 bun
-
 # Copy package files and install production deps only
 COPY package.json bun.lock ./
 COPY packages/*/package.json ./packages/
@@ -59,10 +55,6 @@ COPY --from=base /app/packages/websocket/package.json ./packages/websocket/packa
 COPY --from=base /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=base /app/node_modules/@prisma ./node_modules/@prisma
 
-# Set permissions
-RUN chown -R bun:bun /app
-
-USER bun
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD node -e "require('http').get('http://localhost:3001/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
