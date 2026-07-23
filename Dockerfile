@@ -28,7 +28,7 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 appuser
 
-# Copy node_modules from build stage (only production deps)
+# Copy node_modules from build stage
 COPY --from=base /app/node_modules ./node_modules
 
 # Copy built API
@@ -36,7 +36,6 @@ COPY --from=base /app/apps/api/dist ./apps/api/dist
 COPY --from=base /app/apps/api/prisma ./apps/api/prisma
 
 # Copy workspace packages (source + dist + package.json)
-# Packages use "main": "./src/index.ts" so we need both src/ and dist/
 COPY --from=base /app/packages/auth/src ./packages/auth/src
 COPY --from=base /app/packages/auth/dist ./packages/auth/dist
 COPY --from=base /app/packages/auth/package.json ./packages/auth/package.json
