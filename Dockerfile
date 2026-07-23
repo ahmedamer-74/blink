@@ -1,11 +1,10 @@
-FROM node:20-alpine AS base
+FROM oven/bun:1 AS base
 WORKDIR /app
-RUN npm install -g bun@1.3.14
 
 # Copy root workspace files
 COPY package.json bun.lock turbo.json .npmrc ./
 
-# Copy all workspace packages (source + configs)
+# Copy all workspace packages
 COPY packages/ ./packages/
 
 # Copy API app source
@@ -21,44 +20,51 @@ RUN cd packages/database && bunx prisma generate
 RUN ./node_modules/.bin/turbo run build --filter=api...
 
 # Production stage
-FROM node:20-alpine AS runner
+FROM oven/bun:1 AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 
-RUN addgroup --system --gid 1001 nodejs && \
-    adduser --system --uid 1001 appuser
+# Create non-root user
+RUN addgroup --system --gid 1001 bun && \
+    adduser --system --uid 1001 bun
 
-# Copy node_modules from build stage (third-party deps only)
-COPY --from=base /app/node_modules ./node_modules
+# Copy package files and install production deps only
+COPY package.json bun.lock ./
+COPY packages/*/package.json ./packages/
+RUN bun install --production
 
 # Copy built API
 COPY --from=base /app/apps/api/dist ./apps/api/dist
 
-# Copy workspace packages
-COPY --from=base /app/packages/auth ./packages/auth
-COPY --from=base /app/packages/config ./packages/config
-COPY --from=base /app/packages/database ./packages/database
-COPY --from=base /app/packages/logger ./packages/logger
-COPY --from=base /app/packages/types ./packages/types
-COPY --from=base /app/packages/utils ./packages/utils
-COPY --from=base /app/packages/validation ./packages/validation
-COPY --from=base /app/packages/websocket ./packages/websocket
+# Copy workspace packages (compiled output)
+COPY --from=base /app/packages/auth/dist ./packages/auth/dist
+COPY --from=base /app/packages/auth/package.json ./packages/auth/package.json
+COPY --from=base /app/packages/config/dist ./packages/config/dist
+COPY --from=base /app/packages/config/package.json ./packages/config/package.json
+COPY --from=base /app/packages/database/dist ./packages/database/dist
+COPY --from=base /app/packages/database/prisma ./packages/database/prisma
+COPY --from=base /app/packages/database/package.json ./packages/database/package.json
+COPY --from=base /app/packages/logger/dist ./packages/logger/dist
+COPY --from=base /app/packages/logger/package.json ./packages/logger/package.json
+COPY --from=base /app/packages/types/dist ./packages/types/dist
+COPY --from=base /app/packages/types/package.json ./packages/types/package.json
+COPY --from=base /app/packages/utils/dist ./packages/utils/dist
+COPY --from=base /app/packages/utils/package.json ./packages/utils/package.json
+COPY --from=base /app/packages/validation/dist ./packages/validation/dist
+COPY --from=base /app/packages/validation/package.json ./packages/validation/package.json
+COPY --from=base /app/packages/websocket/dist ./packages/websocket/dist
+COPY --from=base /app/packages/websocket/package.json ./packages/websocket/package.json
 
-# Create workspace symlinks in node_modules (replaces bun's workspace links)
-RUN mkdir -p node_modules/@repo && \
-    ln -sf ../../packages/auth node_modules/@repo/auth && \
-    ln -sf ../../packages/config node_modules/@repo/config && \
-    ln -sf ../../packages/database node_modules/@repo/database && \
-    ln -sf ../../packages/logger node_modules/@repo/logger && \
-    ln -sf ../../packages/types node_modules/@repo/types && \
-    ln -sf ../../packages/utils node_modules/@repo/utils && \
-    ln -sf ../../packages/validation node_modules/@repo/validation && \
-    ln -sf ../../packages/websocket node_modules/@repo/websocket
+# Copy node_modules with .prisma client
+COPY --from=base /app/node_modules/.prisma ./node_modules/.prisma
+COPY --from=base /app/node_modules/@prisma ./node_modules/@prisma
 
-# Copy root package.json for workspace resolution
-COPY --from=base /app/package.json ./package.json
+# Set permissions
+RUN chown -R bun:bun /app
 
-USER appuser
+USER bun
 EXPOSE 3001
-HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost:3001/health || exit 1
-CMD ["node", "apps/api/dist/index.js"]
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+  CMD node -e "require('http').get('http://localhost:3001/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"
+
+CMD ["bun", "run", "start"]
