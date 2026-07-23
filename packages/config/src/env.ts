@@ -7,7 +7,6 @@ const envSchema = z.object({
   API_PREFIX: z.string().default('/api/v1'),
 
   DATABASE_URL: z.string().url(),
-  REDIS_URL: z.string().url().nullish(),
 
   ACCESS_TOKEN_SECRET: z.string().min(32),
   REFRESH_TOKEN_SECRET: z.string().min(32),
