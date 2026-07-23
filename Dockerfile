@@ -28,6 +28,9 @@ ENV NODE_ENV=production
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 appuser
 
+# Install bun for prisma CLI at runtime
+RUN npm install -g bun@1.3.14
+
 # Copy node_modules from build stage
 COPY --from=base /app/node_modules ./node_modules
 
@@ -74,4 +77,4 @@ COPY --from=base /app/package.json ./package.json
 USER appuser
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost:3001/health || exit 1
-CMD ["sh", "-c", "cd packages/database && ../../node_modules/.bin/prisma migrate deploy && cd /app && node apps/api/dist/index.js"]
+CMD ["sh", "-c", "cd packages/database && bunx prisma migrate deploy && cd /app && node apps/api/dist/index.js"]
