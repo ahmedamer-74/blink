@@ -10,6 +10,7 @@ import { authRoutes } from "./modules/auth/auth.routes.js";
 import { usersRoutes } from "./modules/users/users.routes.js";
 import { roomsRoutes } from "./modules/rooms/rooms.routes.js";
 import { messagesRoutes } from "./modules/messages/messages.routes.js";
+import { notificationsRoutes } from "./modules/notifications/notifications.routes.js";
 
 export function createApp() {
   const app = express();
@@ -40,6 +41,7 @@ export function createApp() {
   app.use(`${prefix}/users`, usersRoutes);
   app.use(`${prefix}/rooms`, roomsRoutes);
   app.use(`${prefix}/messages`, messagesRoutes);
+  app.use(`${prefix}/notifications`, notificationsRoutes);
 
   app.use(errorHandler);
 

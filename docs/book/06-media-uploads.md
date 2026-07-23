@@ -6,175 +6,132 @@
 
 Users want to share images, videos, documents, and audio files in chat. Storing files on the application server is problematic: it doesn't scale (the server has limited disk), backups become huge, and serving files directly from Express is slow.
 
-Blink offloads file storage to **Cloudflare R2** — an S3-compatible object storage service. The flow: the client asks the server for a presigned upload URL, uploads directly to R2, and sends the file's URL in the chat message. No file bytes touch the application server.
+Blink offloads file storage to **Cloudinary** — a cloud-based media management service. Files upload directly from the browser to Cloudinary using an **unsigned upload preset**, so no file bytes ever touch the application server.
 
-## How It Works in General
+## How It Works
 
-### Presigned URLs
+### Unsigned Uploads
 
-S3-compatible storage (AWS S3, Cloudflare R2, MinIO) supports **presigned URLs**: a time-limited, signed URL that grants temporary upload or download permission to a specific object.
+Cloudinary supports **unsigned uploads** via upload presets. An upload preset is configured in the Cloudinary dashboard with a name (e.g., `blink-monorepo`) and stores settings like allowed formats, folder, and transformations. The client sends the preset name along with the file — no server-side signature needed.
 
 The flow:
 
-1. Client asks server: "I want to upload a 5MB image."
-2. Server generates a unique key (e.g., `media/user123/1700000000-abc.jpg`).
-3. Server creates a presigned PUT URL for that key (valid for 1 hour).
-4. Client uploads directly to R2 using the presigned URL (no auth needed — the URL itself is the auth).
-5. Client sends the public URL of the uploaded file in the chat message.
+1. User clicks the attachment icon in `MessageInput`.
+2. Browser opens a file picker → user selects a file.
+3. Client uploads directly to `https://api.cloudinary.com/v1_1/{cloudName}/auto/upload` with `upload_preset=blink-monorepo`.
+4. Cloudinary returns `{ secure_url, public_id, bytes, width, height, ... }`.
+5. Client sends a WebSocket message with `type`, `mediaUrl`, and `mediaMeta`.
+6. Server persists to database and broadcasts to the room.
 
-**Why not upload through the server?** The server would need to buffer the entire file in memory, write it to disk, then upload to R2. With presigned URLs, the client uploads directly — the server only handles metadata.
+**Why unsigned?** No API secret is needed on the client or server. Cloudinary enforces the preset's rules (allowed types, folder, transformations) on their side. This is simpler than signed uploads and avoids exposing any secrets.
 
-## How We Do It Here
+### Configuration
 
-### Storage Client (`packages/storage/src/client.ts`)
+**Frontend env** (`apps/web/.env.local`):
+```
+NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME=dxmsfmdvt
+NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET=blink-monorepo
+```
+
+**Cloudinary dashboard** — Upload preset settings:
+- Preset name: `blink-monorepo`
+- Signing mode: **Unsigned**
+- Folder: (optional) e.g., `blink` — organizes all uploads under a prefix
+- Allowed formats: images, video, audio, raw (documents)
+
+### Upload Flow (`apps/web/src/lib/api.ts`)
 
 ```typescript
-import { S3Client } from "@aws-sdk/client-s3";
+export async function uploadToCloudinary(
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<CloudinaryUploadResult> {
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("upload_preset", CLOUDINARY_UPLOAD_PRESET);
+  formData.append("resource_type", "auto");
 
-let client: S3Client | null = null;
-
-export function initStorage(storageConfig: StorageConfig): void {
-  config = storageConfig;
-  client = new S3Client({
-    region: "auto",
-    endpoint: storageConfig.endpoint || `https://${storageConfig.accountId}.r2.cloudflarestorage.com`,
-    credentials: {
-      accessKeyId: storageConfig.accessKeyId,
-      secretAccessKey: storageConfig.secretAccessKey,
-    },
-  });
-}
-
-export function getStorageClient(): S3Client {
-  if (!client) throw new Error("Storage not initialized. Call initStorage() first.");
-  return client;
+  // POST to https://api.cloudinary.com/v1_1/{cloudName}/auto/upload
+  // Uses XHR for progress tracking
 }
 ```
 
-- **`region: "auto"`**: R2 doesn't use AWS regions — `"auto"` is the R2 convention.
-- **`endpoint`**: Falls back to the standard R2 endpoint format. Can be overridden for local testing with MinIO.
-- **Lazy initialization**: `initStorage()` must be called once at startup. `getStorageClient()` returns the singleton.
+- **`resource_type: "auto"`**: Cloudinary detects whether the file is image, video, or raw.
+- **XHR with progress**: Uses `XMLHttpRequest` to get upload progress via `xhr.upload.onprogress`.
+- **Direct to Cloudinary**: File bytes go straight from the browser to Cloudinary.
 
-### Presigned URL Generation (`packages/storage/src/presign.ts`)
+### Upload Hook (`apps/web/src/hooks/use-media-upload.ts`)
 
 ```typescript
-export async function getPresignedUploadUrl(
-  key: string,
-  contentType: string,
-  expiresIn: number = 3600,
-): Promise<PresignResult> {
-  const client = getStorageClient();
-  const config = getStorageConfig();
-
-  const command = new PutObjectCommand({
-    Bucket: config.bucketName,
-    Key: key,
-    ContentType: contentType,
-  });
-
-  const uploadUrl = await getSignedUrl(client, command, { expiresIn });
-  const publicUrl = `${config.publicUrl}/${key}`;
-
-  return { uploadUrl, publicUrl, key };
+export function useMediaUpload() {
+  // State: isUploading, progress, error
+  // upload(file) → { result, mediaType } | null
+  // reset() → clears state
 }
 ```
 
-- **`PutObjectCommand`**: Tells S3/R2 this is an upload (PUT) operation.
-- **`ContentType`**: Included in the signature so the client must upload with the correct content type. Prevents uploading an EXE as an image.
-- **`expiresIn: 3600`**: The presigned URL is valid for 1 hour.
-- **`publicUrl`**: The permanent URL to access the file after upload. R2 public buckets expose files at `<publicUrl>/<key>`.
+Manages the full upload lifecycle. No auth needed — unsigned uploads don't require a server round-trip.
 
-### Media Key Generation
+### MessageInput Integration (`apps/web/src/components/chat/message-input.tsx`)
 
-```typescript
-export function generateMediaKey(
-  userId: string,
-  filename: string,
-  prefix: string = "media"
-): string {
-  const timestamp = Date.now();
-  const random = Math.random().toString(36).substring(2, 8);
-  const ext = filename.split(".").pop() || "bin";
-  return `${prefix}/${userId}/${timestamp}-${random}.${ext}`;
-}
-```
-
-Keys follow the pattern: `media/<userId>/<timestamp>-<random>.<ext>`. This ensures:
-- **No collisions**: timestamp + random string.
-- **Organized by user**: Easy to list/delete all files for a user.
-- **Preserves extension**: Browsers need the extension to serve the correct MIME type.
+1. **Paperclip button** opens a file picker (images, video, audio, documents up to 50MB).
+2. **File preview** shows selected file with name, size, and progress bar during upload.
+3. **Caption input** — optional text to accompany the media.
+4. **Send** triggers upload → WebSocket message with `type`, `mediaUrl`, and `mediaMeta`.
 
 ### File Validation (`packages/validation/src/schemas/media.ts`)
 
 ```typescript
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
-const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/gif", "image/webp"];
-const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/webm", "video/quicktime"];
-const ALLOWED_AUDIO_TYPES = ["audio/mpeg", "audio/wav", "audio/ogg", "audio/webm"];
-const ALLOWED_DOC_TYPES = [
-  "application/pdf",
-  "application/msword",
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "application/vnd.ms-excel",
-  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-  "text/plain",
+export const ALLOWED_MEDIA_TYPES = [
+  "image/jpeg", "image/png", "image/gif", "image/webp",
+  "video/mp4", "video/webm", "video/quicktime",
+  "audio/mpeg", "audio/wav", "audio/ogg", "audio/webm",
+  "application/pdf", "application/msword", ...
 ];
 
-export const presignUploadSchema = z.object({
-  filename: z.string().min(1).max(255),
-  contentType: z.string(),
-  size: z.number().int().min(1).max(MAX_FILE_SIZE),
-}).refine(
-  (data) => {
-    const allowed = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYPES, ...ALLOWED_AUDIO_TYPES, ...ALLOWED_DOC_TYPES];
-    return allowed.includes(data.contentType);
-  },
-  { message: "File type not allowed" }
-);
+export const MAX_MEDIA_SIZE = 50 * 1024 * 1024; // 50MB
 ```
 
-Validation happens **before** generating the presigned URL. The server rejects invalid files before any storage operation. The 50MB limit is enforced both by Zod validation and by the presigned URL's `Content-Length` header.
+Client-side validation catches bad files early. Cloudinary also validates on their end.
 
 ### Integration Status
 
-**Implemented**: The `packages/storage/` package, validation schemas, and the `UserKeyBundle` model for E2EE keys.
+**Implemented**:
+- `apps/web/src/lib/api.ts` — `uploadToCloudinary()` function
+- `apps/web/src/hooks/use-media-upload.ts` — Upload hook with progress tracking
+- `apps/web/src/components/chat/message-input.tsx` — File attachment UI
+- `packages/validation/src/schemas/media.ts` — Validation constants
+- WebSocket gateway already supports `mediaUrl` and `mediaMeta` fields
 
-**Not yet wired**: The actual upload endpoints in `apps/api/` and the upload UI in `apps/web/`. The message type system (`type: "image" | "video" | "document" | "audio"`) and `mediaUrl`/`mediaMeta` fields in the Message model are ready to receive uploaded files, but the upload flow (presign endpoint → client upload → send media message) is not yet connected.
-
-**Planned**: 
-- A `POST /api/v1/media/presign` endpoint that generates upload URLs.
-- A `MediaUploader` component that handles client-side upload.
-- Integration with `MessageInput` to support file attachments.
-- Image thumbnail generation and video transcoding (likely via Cloudflare Workers).
-
-### How It Will Work (When Complete)
+### How It Works (End to End)
 
 ```
-1. User clicks attachment icon in MessageInput
+1. User clicks paperclip icon in MessageInput
 2. Browser opens file picker → user selects image.jpg (2.3MB)
-3. Client POSTs to /api/v1/media/presign { filename: "image.jpg", contentType: "image/jpeg", size: 2300000 }
-4. Server validates → generates key "media/user123/1700000000-abc123.jpg" → returns presigned URL + public URL
-5. Client PUTs the file directly to R2 using the presigned URL
-6. Client sends WebSocket message: message:send { roomId, content: "", type: "image", mediaUrl: "https://pub-xxx.r2.dev/media/user123/1700000000-abc123.jpg", mediaMeta: { size: 2300000, mimeType: "image/jpeg" } }
-7. Server persists to database, broadcasts message:new to room
+3. Client shows file preview with name and size
+4. User optionally types a caption and clicks Send
+5. Client POSTs directly to Cloudinary with upload_preset=blink-monorepo
+6. Cloudinary returns { secure_url, public_id, bytes, width, height, ... }
+7. Client sends WebSocket message: message:send { roomId, content: "", type: "image", mediaUrl: "https://res.cloudinary.com/xxx/...", mediaMeta: { size: 2300000, mimeType: "image/jpeg" } }
+8. Server persists to database, broadcasts message:new to room
 ```
 
 ## Common Mistakes / Gotchas
 
-1. **Uploading through the server**: Don't proxy file uploads through Express. It wastes server memory and bandwidth. Always use presigned URLs.
+1. **Unsigned presets are public**: Anyone who knows your cloud name and preset name can upload. Cloudinary enforces the preset's rules (allowed types, folder, max file size), but you should set those restrictions in the dashboard.
 
-2. **Not validating content type**: The client can lie about the content type. The presigned URL should include `ContentType` in the signature so R2 rejects mismatches.
+2. **Not setting `resource_type: "auto"`**: Without this, Cloudinary defaults to `image` and rejects videos/documents.
 
-3. **Using predictable file names**: `uploads/user123/profile.jpg` can be overwritten by anyone. The timestamp + random string pattern prevents this.
+3. **Forgetting CORS**: Cloudinary allows cross-origin uploads by default. No special config needed.
 
-4. **Forgetting CORS on R2**: If the client uploads directly to R2, the R2 bucket must have CORS configured to allow the frontend origin. Cloudflare R2 dashboard → Settings → CORS.
+4. **Large video uploads**: Videos can be slow to upload. The progress bar in `MessageInput` keeps users informed.
 
-5. **Not setting `maxAge` on presigned URLs**: Long-lived presigned URLs are a security risk. 1 hour (3600s) is a reasonable default.
+5. **`NEXT_PUBLIC_` prefix**: In Next.js, only env vars prefixed with `NEXT_PUBLIC_` are exposed to the browser. This is required for Cloudinary config.
 
 ## Try It Yourself
 
-1. Set up a Cloudflare R2 bucket (free tier: 10GB storage, 10M reads/month).
-2. Add `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET_NAME`, `R2_PUBLIC_URL` to your `.env`.
-3. Create a simple test script that calls `initStorage()` and `getPresignedUploadUrl()`.
-4. Use `curl` to PUT a file to the presigned URL.
-5. Verify the file is accessible at the public URL.
+1. Create a Cloudinary account (free tier: 25 credits/month, 25GB storage).
+2. Create an upload preset named `blink-monorepo` with Signing Mode: **Unsigned**.
+3. Add your cloud name to `apps/web/.env.local`.
+4. Start the web app, open a chat, click the paperclip, select an image.
+5. Verify the image uploads and appears in the chat.

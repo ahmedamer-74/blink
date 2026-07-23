@@ -4,6 +4,7 @@ import { presenceManager } from "./ws.presence.js";
 import { roomManager } from "./ws.rooms.js";
 import { prisma } from "@repo/database";
 import { logger } from "@repo/logger";
+import { isPushConfigured, sendPushNotification } from "../lib/push.js";
 
 const EDIT_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
 
@@ -19,6 +20,77 @@ async function isAdmin(roomId: string, userId: string): Promise<boolean> {
     where: { userId_roomId: { userId, roomId } },
   });
   return !!membership && (membership.role === "admin" || membership.role === "owner");
+}
+
+/**
+ * Send push notifications to room members who are NOT currently connected via WebSocket.
+ */
+async function notifyOfflineMembers(
+  roomId: string,
+  senderId: string,
+  senderUsername: string,
+  content: string,
+  type: string,
+) {
+  if (!isPushConfigured()) return;
+
+  // Get all accepted members of the room
+  const memberships = await prisma.roomMembership.findMany({
+    where: { roomId, status: "accepted" },
+    select: { userId: true },
+  });
+
+  const memberIds = memberships.map((m) => m.userId).filter((id) => id !== senderId);
+  if (memberIds.length === 0) return;
+
+  // Find which members are NOT connected to any WebSocket in this room
+  const roomSockets = roomManager.getRoomSockets(roomId);
+  const connectedUserIds = new Set(
+    roomSockets.map((s) => s.userId).filter(Boolean),
+  );
+
+  const offlineUserIds = memberIds.filter((id) => !connectedUserIds.has(id));
+  if (offlineUserIds.length === 0) return;
+
+  // Get push subscriptions for offline users
+  const subscriptions = await prisma.pushSubscription.findMany({
+    where: { userId: { in: offlineUserIds } },
+  });
+
+  if (subscriptions.length === 0) return;
+
+  const displayContent = type === "text"
+    ? content.slice(0, 100)
+    : `[${type}]`;
+
+  const payload = JSON.stringify({
+    title: senderUsername,
+    body: displayContent,
+    roomId,
+    type: "message",
+  });
+
+  // Send to all subscriptions (don't await — fire and forget)
+  const staleEndpoints: string[] = [];
+  await Promise.allSettled(
+    subscriptions.map(async (sub) => {
+      const ok = await sendPushNotification(
+        {
+          endpoint: sub.endpoint,
+          keys: { p256dh: sub.p256dh, auth: sub.auth },
+        },
+        payload,
+      );
+      if (!ok) staleEndpoints.push(sub.endpoint);
+    }),
+  );
+
+  // Clean up expired subscriptions
+  if (staleEndpoints.length > 0) {
+    await prisma.pushSubscription.deleteMany({
+      where: { endpoint: { in: staleEndpoints } },
+    });
+  }
 }
 
 export async function handleMessage(socket: AuthenticatedSocket, raw: string) {
@@ -85,6 +157,16 @@ export async function handleMessage(socket: AuthenticatedSocket, raw: string) {
         },
       });
       roomManager.broadcast(data.roomId, broadcastMsg);
+
+      // Send push notifications to offline room members
+      notifyOfflineMembers(
+        data.roomId,
+        socket.userId!,
+        socket.username!,
+        data.content,
+        data.type || "text",
+      ).catch((err) => logger.error({ err }, "Push notification error"));
+
       break;
     }
 
@@ -254,6 +336,15 @@ export async function handleMessage(socket: AuthenticatedSocket, raw: string) {
         },
       });
       roomManager.broadcast(data.roomId, replyMsg);
+
+      notifyOfflineMembers(
+        data.roomId,
+        socket.userId!,
+        socket.username!,
+        data.content,
+        data.type || "text",
+      ).catch((err) => logger.error({ err }, "Push notification error"));
+
       break;
     }
 

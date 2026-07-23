@@ -3,10 +3,13 @@ import { logger } from "@repo/logger";
 import { prisma } from "@repo/database";
 import { createApp } from "./app.js";
 import { createServer } from "./server.js";
+import { initPush } from "./lib/push.js";
 
 async function main() {
   await prisma.$connect();
   logger.info("Connected to PostgreSQL");
+
+  initPush();
 
   const app = createApp();
   const server = createServer(app);

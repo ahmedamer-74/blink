@@ -51,6 +51,12 @@ export class RoomManager {
     }
   }
 
+  getRoomSockets(roomId: string): AuthenticatedSocket[] {
+    const room = this.rooms.get(roomId);
+    if (!room) return [];
+    return Array.from(room);
+  }
+
   broadcastAll(message: unknown, excludeUserId?: string) {
     const payload = JSON.stringify(message);
     for (const [, room] of this.rooms) {

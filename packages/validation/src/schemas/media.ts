@@ -13,27 +13,21 @@ const ALLOWED_DOC_TYPES = [
   "text/plain",
 ];
 
-export const presignUploadSchema = z.object({
-  filename: z.string().min(1).max(255),
-  contentType: z.string(),
-  size: z.number().int().min(1).max(MAX_FILE_SIZE),
-}).refine(
-  (data) => {
-    const allowed = [...ALLOWED_IMAGE_TYPES, ...ALLOWED_VIDEO_TYPES, ...ALLOWED_AUDIO_TYPES, ...ALLOWED_DOC_TYPES];
-    return allowed.includes(data.contentType);
-  },
-  { message: "File type not allowed" }
-);
+export const ALLOWED_MEDIA_TYPES = [
+  ...ALLOWED_IMAGE_TYPES,
+  ...ALLOWED_VIDEO_TYPES,
+  ...ALLOWED_AUDIO_TYPES,
+  ...ALLOWED_DOC_TYPES,
+];
 
-export const mediaUploadSchema = z.object({
-  key: z.string().min(1),
+export const MAX_MEDIA_SIZE = MAX_FILE_SIZE;
+
+export const confirmUploadSchema = z.object({
+  publicId: z.string().min(1),
   contentType: z.string(),
   size: z.number().int().min(1),
   width: z.number().int().optional(),
-  height: z.number().int().optional(),
+  height: z.number().optional(),
   duration: z.number().optional(),
-});
-
-export const mediaKeyParamSchema = z.object({
-  key: z.string().min(1),
+  thumbnailUrl: z.string().url().optional(),
 });
