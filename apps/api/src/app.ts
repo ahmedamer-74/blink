@@ -15,7 +15,7 @@ import { notificationsRoutes } from "./modules/notifications/notifications.route
 export function createApp() {
   const app = express();
 
-  app.use(helmet());
+  app.use(helmet() as any);
   app.use(compression());
   app.use(
     cors({
