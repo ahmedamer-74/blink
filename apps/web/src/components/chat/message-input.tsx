@@ -66,9 +66,11 @@ export function MessageInput({
       const file = e.target.files?.[0];
       if (!file) return;
 
+      console.log("File selected:", file.name, file.type, file.size);
+
       // Validate file type
       if (!ALLOWED_MEDIA_TYPES.includes(file.type)) {
-        alert("File type not allowed");
+        alert(`File type not allowed: ${file.type}`);
         return;
       }
 
@@ -214,7 +216,7 @@ export function MessageInput({
           ref={fileInputRef}
           type="file"
           className="hidden"
-          accept={ALLOWED_MEDIA_TYPES.join(",")}
+          accept="image/*,video/*,audio/*,.pdf,.doc,.docx,.xls,.xlsx,.txt"
           onChange={handleFileSelect}
         />
         <Button

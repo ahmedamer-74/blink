@@ -48,7 +48,9 @@ export async function uploadToCloudinary(
       if (xhr.status >= 200 && xhr.status < 300) {
         resolve(JSON.parse(xhr.responseText));
       } else {
-        reject(new Error(`Upload failed: ${xhr.status}`));
+        const body = xhr.responseText;
+        console.error("Cloudinary upload error:", xhr.status, body);
+        reject(new Error(`Upload failed: ${xhr.status} - ${body}`));
       }
     };
 
