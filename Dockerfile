@@ -33,7 +33,6 @@ COPY --from=base /app/node_modules ./node_modules
 
 # Copy built API
 COPY --from=base /app/apps/api/dist ./apps/api/dist
-COPY --from=base /app/apps/api/prisma ./apps/api/prisma
 
 # Copy workspace packages (source + dist + package.json)
 COPY --from=base /app/packages/auth/src ./packages/auth/src
