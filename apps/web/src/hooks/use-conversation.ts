@@ -154,7 +154,9 @@ export function useConversation(roomId: string) {
   // Send a text or media message
   const sendMessage = useCallback(
     (content: string, options?: SendMessageOptions) => {
-      if (!socket || !content.trim()) return;
+      if (!socket) return;
+      // Allow empty content for media messages
+      if (!content.trim() && !options?.mediaUrl) return;
 
       if (options?.replyToMessageId) {
         // Send as a reply
