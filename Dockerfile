@@ -15,7 +15,7 @@ COPY apps/api/ ./apps/api/
 RUN bun install
 
 # Generate Prisma client
-RUN cd apps/api && bunx prisma generate
+RUN cd packages/database && bunx prisma generate
 
 # Build the API and its workspace dependencies
 RUN turbo run build --filter=api...
@@ -75,4 +75,4 @@ COPY --from=base /app/package.json ./package.json
 USER appuser
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost:3001/health || exit 1
-CMD ["sh", "-c", "cd apps/api && npx prisma migrate deploy && cd /app && node apps/api/dist/index.js"]
+CMD ["sh", "-c", "cd packages/database && npx prisma migrate deploy && cd /app && node apps/api/dist/index.js"]
