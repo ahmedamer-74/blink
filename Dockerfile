@@ -12,7 +12,7 @@ COPY packages/ ./packages/
 COPY apps/api/ ./apps/api/
 
 # Install all dependencies (monorepo)
-RUN bun install --frozen-lockfile
+RUN bun install
 
 # Generate Prisma client
 RUN cd apps/api && bunx prisma generate
