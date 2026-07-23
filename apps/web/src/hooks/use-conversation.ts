@@ -36,6 +36,9 @@ export function useConversation(roomId: string) {
     const unsubMessageNew = socket.on(WS_EVENTS.SERVER.MESSAGE_NEW, (data) => {
       if (data.roomId === roomId) {
         const wsMsg = data.message as WsMessage;
+
+        // Skip own messages — already shown via optimistic update
+        if (wsMsg.userId === user?.id) return;
         const msg: Message = {
           id: wsMsg.id,
           content: wsMsg.content,
@@ -158,8 +161,33 @@ export function useConversation(roomId: string) {
       // Allow empty content for media messages
       if (!content.trim() && !options?.mediaUrl) return;
 
+      // Optimistic update — show message immediately for the sender
+      const tempId = crypto.randomUUID();
+      const optimisticMsg: Message = {
+        id: tempId,
+        content: content.trim(),
+        type: options?.type || "text",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        userId: user?.id || "",
+        roomId,
+        replyToMessageId: options?.replyToMessageId || null,
+        forwardedFromId: options?.forwardedFromId || null,
+        mediaUrl: options?.mediaUrl || null,
+        mediaMeta: (options?.mediaMeta as Message["mediaMeta"]) || null,
+        editedAt: null,
+        deletedForEveryone: false,
+        systemMeta: null,
+        user: {
+          id: user?.id || "",
+          username: user?.username || "",
+          avatar: null,
+        },
+        status: "sent",
+      };
+      setMessages((prev) => [...prev, optimisticMsg]);
+
       if (options?.replyToMessageId) {
-        // Send as a reply
         socket.send(WS_EVENTS.CLIENT.MESSAGE_REPLY, {
           roomId,
           content: content.trim(),
@@ -169,7 +197,6 @@ export function useConversation(roomId: string) {
           mediaMeta: options.mediaMeta,
         });
       } else {
-        // Send regular message
         socket.send(WS_EVENTS.CLIENT.MESSAGE_SEND, {
           roomId,
           content: content.trim(),
@@ -180,7 +207,7 @@ export function useConversation(roomId: string) {
         });
       }
     },
-    [socket, roomId]
+    [socket, roomId, user]
   );
 
   // Edit an existing message
