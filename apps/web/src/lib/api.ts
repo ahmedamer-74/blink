@@ -22,6 +22,16 @@ export interface CloudinaryUploadResult {
   original_filename: string;
 }
 
+/**
+ * Build a correct Cloudinary URL based on the actual resource_type.
+ * Cloudinary's "auto" detection sometimes returns wrong resource_type in the URL,
+ * so we construct it ourselves.
+ */
+export function getCloudinaryUrl(result: CloudinaryUploadResult): string {
+  const resourceType = result.resource_type || "image";
+  return `https://res.cloudinary.com/${CLOUDINARY_CLOUD_NAME}/${resourceType}/upload/v${result.version}/${result.public_id}.${result.format}`;
+}
+
 export async function uploadToCloudinary(
   file: File,
   onProgress?: (percent: number) => void,

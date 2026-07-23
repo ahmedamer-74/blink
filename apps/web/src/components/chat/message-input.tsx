@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ReplyBar } from "./reply-bar";
 import { useMediaUpload } from "@/hooks/use-media-upload";
+import { getCloudinaryUrl } from "@/lib/api";
 import { ALLOWED_MEDIA_TYPES } from "@repo/validation";
 import type { Message } from "@/lib/types";
 
@@ -124,7 +125,7 @@ export function MessageInput({
         onSend(caption, {
           replyToMessageId: replyingTo?.id,
           type: mediaType,
-          mediaUrl: result.secure_url,
+          mediaUrl: getCloudinaryUrl(result),
           mediaMeta: meta,
         });
 
