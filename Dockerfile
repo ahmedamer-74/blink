@@ -74,4 +74,4 @@ COPY --from=base /app/package.json ./package.json
 USER appuser
 EXPOSE 3001
 HEALTHCHECK --interval=30s --timeout=3s CMD wget -qO- http://localhost:3001/health || exit 1
-CMD ["sh", "-c", "cd packages/database && npx prisma migrate deploy && cd /app && node apps/api/dist/index.js"]
+CMD ["sh", "-c", "cd packages/database && ./../../node_modules/.bin/prisma migrate deploy && cd /app && node apps/api/dist/index.js"]
