@@ -18,7 +18,7 @@ RUN bun install
 RUN cd packages/database && bunx prisma generate
 
 # Build the API and its workspace dependencies
-RUN turbo run build --filter=api...
+RUN ./node_modules/.bin/turbo run build --filter=api...
 
 # Production stage
 FROM node:20-alpine AS runner

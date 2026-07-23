@@ -7,7 +7,7 @@ COPY packages/ ./packages/
 COPY apps/web/ ./apps/web/
 
 RUN bun install
-RUN turbo run build --filter=web...
+RUN ./node_modules/.bin/turbo run build --filter=web...
 
 FROM node:20-alpine AS runner
 WORKDIR /app
